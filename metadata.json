@@ -1,0 +1,6 @@
+{
+  "name": "RekaSync",
+  "description": "The precise aesthetic feedback tool for digital design agencies and freelance artists.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
