@@ -25,20 +25,28 @@ export default function Dashboard({
 }: DashboardProps) {
   const [activeFilter, setActiveFilter] = useState<'All' | 'Active' | 'Completed' | 'Archived'>('All');
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
-  const [liveResponseCount, setLiveResponseCount] = useState(1515);
   const [isAnimatingCount, setIsAnimatingCount] = useState(false);
 
-  // Simulate real-time updates for the "Total Responses" count, just like the preview script
+  // Calculate the actual total swipes across all projects
+  const actualSwipes = projects.reduce((total, p) => {
+    return total + (p.assets?.reduce((sum, a) => sum + (a.totalSwipes || 0), 0) || 0);
+  }, 0);
+
+  // Calculate dynamic completed sessions across all projects
+  const totalCompletedSessions = projects.reduce((total, p) => {
+    if (!p.assets || p.assets.length === 0) return total;
+    const maxSwipes = Math.max(...p.assets.map(a => a.totalSwipes || 0));
+    return total + maxSwipes;
+  }, 0);
+
+  // Trigger brief highlight animation whenever there is a new swipe/response
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (Math.random() > 0.6) {
-        setLiveResponseCount(prev => prev + Math.floor(Math.random() * 3) + 1);
-        setIsAnimatingCount(true);
-        setTimeout(() => setIsAnimatingCount(false), 800);
-      }
-    }, 4500);
-    return () => clearInterval(timer);
-  }, []);
+    if (actualSwipes > 0) {
+      setIsAnimatingCount(true);
+      const timer = setTimeout(() => setIsAnimatingCount(false), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [actualSwipes]);
 
   // Filter projects based on selected tab
   const filteredProjects = projects.filter(project => {
@@ -94,9 +102,36 @@ export default function Dashboard({
         <div className="p-6 rounded-2xl bg-surface-container-high border border-outline-variant/60 hover:translate-y-[-2px] transition-all duration-300">
           <p className="text-[10px] md:text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-1">Total Projects</p>
           <h3 className="text-3xl md:text-4.5xl font-headline font-black text-primary">{totalProjects}</h3>
-          <div className="mt-2.5 flex items-center gap-1 text-xs text-tertiary font-bold">
-            <TrendingUp className="w-4 h-4" /> +12% this month
-          </div>
+          {totalProjects === 0 ? (
+            <div className="mt-2.5 text-xs text-on-surface-variant font-medium flex items-center gap-1">
+              Create a project to start tracking
+            </div>
+          ) : (() => {
+            const now = new Date();
+            const currentMonthStr = now.toLocaleDateString('en-GB', { month: 'short' });
+            const currentYearStr = now.getFullYear().toString();
+            const projectsThisMonth = projects.filter(p => {
+              if (!p.createdDate) return false;
+              const lower = p.createdDate.toLowerCase();
+              return lower.includes(currentMonthStr.toLowerCase()) && lower.includes(currentYearStr);
+            }).length;
+
+            if (projectsThisMonth > 0) {
+              return (
+                <div className="mt-2.5 flex items-center gap-1 text-xs text-tertiary font-bold animate-fade-in">
+                  <TrendingUp className="w-4 h-4 text-tertiary animate-pulse" /> 
+                  +{projectsThisMonth} added this month
+                </div>
+              );
+            } else {
+              return (
+                <div className="mt-2.5 flex items-center gap-1 text-xs text-on-surface-variant font-medium animate-fade-in">
+                  <ClipboardList className="w-4 h-4 text-on-surface-variant/70" /> 
+                  {totalProjects} {totalProjects === 1 ? 'project' : 'projects'} on record
+                </div>
+              );
+            }
+          })()}
         </div>
 
         {/* Active Projects */}
@@ -121,11 +156,11 @@ export default function Dashboard({
         <div className="p-6 rounded-2xl bg-surface-container-high border border-outline-variant/60 hover:translate-y-[-2px] transition-all duration-300 relative overflow-hidden group">
           <div className="relative z-10 space-y-1">
             <p className="text-[10px] md:text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Total Responses</p>
-            <h3 className={`text-3xl md:text-4.5xl font-headline font-black transition-all duration-500 ${isAnimatingCount ? 'scale-105 text-tertiary' : 'text-primary'}`}>
-              {liveResponseCount.toLocaleString()}
+            <h3 className={`text-2xl md:text-3.5xl font-headline font-black transition-all duration-500 ${isAnimatingCount ? 'scale-105 text-tertiary' : 'text-primary'}`}>
+              {totalCompletedSessions.toLocaleString()} <span className="text-[11px] text-on-surface-variant font-medium select-none">({actualSwipes.toLocaleString()} swipes)</span>
             </h3>
-            <div className="mt-2.5 flex items-center gap-1 text-xs text-primary font-bold">
-              <Zap className="w-4 h-4 fill-primary" /> Real-time active
+            <div className="mt-4 flex items-center gap-1 text-xs text-primary font-bold">
+              <Zap className="w-4 h-4 fill-primary" /> Real-time synchronized
             </div>
           </div>
           <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 duration-500">

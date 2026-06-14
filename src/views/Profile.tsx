@@ -1,6 +1,15 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Edit3, Lock, Check, CreditCard, ShieldAlert, Key } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { ArrowLeft, Edit3, Lock, Check, CreditCard, ShieldAlert, Key, Upload } from 'lucide-react';
 import { ViewType } from '../types';
+import { updateUserProfile } from '../lib/supabase';
+
+const AVATAR_PRESETS = [
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuDR3ShdSe3XCmjYV0bcDQuSudSlNvQL-Y9u5NfaZOg2RdciLLS99iLZrNmSHaoEH9iPC6oz48jpOyKbCSIKJGV6mS8bLFuZ5exJIcHaNnP-UPvkUTCVkZD1NBIhLQZQPSCcGdcNu3G78FRmirs8Pj6m1xU-r8RC3t_4G-XC6JPOkjvcwfyAcKr__sSwlOS3CpMEVWua0KpOZK05gGG8C3yjkAUiY9ahs9jrIBl6mz90ObxFeeajXUaLVuTL89gtpmxmBlWyBAeIz_w',
+  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&h=256&q=80',
+  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=256&h=256&q=80',
+  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&h=256&q=80'
+];
 
 interface ProfileProps {
   onNavigate: (view: ViewType) => void;
@@ -11,22 +20,64 @@ interface ProfileProps {
 
 export default function Profile({ onNavigate, user, onUpdateUser, onNotify }: ProfileProps) {
   const [fullName, setFullName] = useState(user?.name || 'Alexander Morgan');
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || AVATAR_PRESETS[0]);
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleUpdateDetails = (e: React.FormEvent) => {
+  const handleUpdateDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName) {
       onNotify('Full Name cannot be empty.', 'Validation failed');
       return;
     }
     if (user) {
-      onUpdateUser({
-        ...user,
-        name: fullName
-      });
-      onNotify('Your profile information has been safely updated.', 'Profile Saved');
+      try {
+        await updateUserProfile(fullName, avatarUrl);
+        onUpdateUser({
+          ...user,
+          name: fullName,
+          avatarUrl: avatarUrl
+        });
+        onNotify('Your profile information and custom photo have been safely updated.', 'Profile Saved');
+      } catch (err: any) {
+        console.warn("Could not sync profile in Supabase Auth:", err);
+        // Fallback update local state for clean prototype experience
+        onUpdateUser({
+          ...user,
+          name: fullName,
+          avatarUrl: avatarUrl
+        });
+        onNotify('Your profile has been saved in active context memory.', 'Profile Updated');
+      }
     }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        onNotify('Please select a valid image file.', 'Invalid Format');
+        return;
+      }
+      if (file.size > 800 * 1024) {
+        onNotify('Image file size must not exceed 800KB limit.', 'File Too Large');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          setAvatarUrl(reader.result);
+          onNotify('Custom portrait image preview loaded successfully. Save profile for final sync!', 'Photo Loaded');
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click();
   };
 
   const handleUpdatePassword = () => {
@@ -73,27 +124,67 @@ export default function Profile({ onNavigate, user, onUpdateUser, onNotify }: Pr
           
           {/* Avatar Upload area */}
           <div className="flex flex-col items-center gap-4 pb-6 border-b border-outline-variant/30 text-center">
-            <div className="relative group/avatar cursor-pointer">
-              <div className="w-28 h-28 rounded-full overflow-hidden border-2 border-primary/20 bg-surface-container">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileChange} 
+              accept="image/*" 
+              className="hidden" 
+            />
+            
+            <div className="relative group/avatar cursor-pointer" onClick={triggerFileUpload}>
+              <div className="w-28 h-28 rounded-full overflow-hidden border-2 border-primary/20 bg-surface-container relative">
                 <img 
                   alt="User profile avatar" 
                   className="w-full h-full object-cover group-hover/avatar:scale-105 duration-300" 
-                  src={user?.avatarUrl} 
+                  src={avatarUrl} 
                 />
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/avatar:opacity-100 duration-300 flex items-center justify-center text-white/95">
+                  <Upload className="w-5 h-5 shrink-0" />
+                </div>
               </div>
-              <button className="absolute bottom-0 right-0 bg-primary text-on-primary p-2 rounded-full shadow-lg hover:bg-primary-container transition-colors active:scale-95 flex items-center justify-center">
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerFileUpload();
+                }}
+                className="absolute bottom-0 right-0 bg-primary text-on-primary p-2 rounded-full shadow-lg hover:bg-primary-container transition-colors active:scale-95 flex items-center justify-center cursor-pointer"
+              >
                 <Edit3 className="w-4 h-4" />
               </button>
             </div>
-            <div>
-              <button 
-                type="button"
-                onClick={() => onNotify('Alternative photo presets are not configured.', 'Preset Alert')}
-                className="text-xs font-bold text-primary hover:underline transition-all cursor-pointer bg-transparent border-none"
-              >
-                Change Photo
-              </button>
-              <p className="text-[10px] text-on-surface-variant font-medium mt-1">JPG, GIF or PNG. Max size of 800K</p>
+            
+            <div className="space-y-3 w-full">
+              <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
+                <button 
+                  type="button"
+                  onClick={triggerFileUpload}
+                  className="px-3.5 py-1.5 rounded-lg border border-outline-variant hover:border-on-surface text-[11px] font-bold tracking-tight bg-surface-container-low hover:bg-surface-container transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Upload className="w-3.5 h-3.5 text-on-surface-variant" />
+                  Upload Custom Portrait
+                </button>
+              </div>
+              
+              {/* Presets Grid */}
+              <div className="flex flex-col items-center gap-1.5">
+                <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">Sleek Design Avatars</p>
+                <div className="flex gap-2 justify-center items-center flex-wrap">
+                  {AVATAR_PRESETS.map((p, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setAvatarUrl(p)}
+                      className={`w-10 h-10 rounded-full overflow-hidden border-2 transition-all p-0.5 active:scale-95 cursor-pointer bg-transparent ${avatarUrl === p ? 'border-primary scale-110 shadow-md' : 'border-outline-variant hover:border-primary/50'}`}
+                    >
+                      <img src={p} alt={`Preset avatar ${idx}`} className="w-full h-full object-cover rounded-full" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <p className="text-[10px] text-on-surface-variant font-medium mt-1">JPG, GIF or PNG. Max size of 800KB</p>
             </div>
           </div>
 
@@ -121,7 +212,7 @@ export default function Profile({ onNavigate, user, onUpdateUser, onNotify }: Pr
                 <label className="block text-xs font-semibold text-on-surface-variant">Email Address</label>
                 <div className="relative">
                   <input 
-                    readonly
+                    readOnly
                     type="email" 
                     value={user?.email || 'alexander.morgan@rekasync.io'} 
                     className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-4 py-2.5 text-on-surface-variant text-xs cursor-not-allowed opacity-70 outline-none font-medium"

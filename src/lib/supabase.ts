@@ -9,7 +9,12 @@ const cleanUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').trim();
 const anonKey = env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlqcnVkeHdwaHBjb2Z5Y3diaXZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0MjUwOTAsImV4cCI6MjA5NzAwMTA5MH0.TNuPILMuIlIlOTburHRcAihLcjCNfnlMbGpgylWNdAc';
 
 
-export const supabase = createClient(cleanUrl, anonKey);
+export const supabase = createClient(cleanUrl, anonKey, {
+  auth: {
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+});
 
 /**
  * Handle user registration in Supabase Auth
@@ -57,6 +62,24 @@ export async function logoutUser() {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+/**
+ * Update the user profile (full name and avatar URL) in Supabase Auth user_metadata.
+ */
+export async function updateUserProfile(fullName: string, avatarUrl: string) {
+  const { data, error } = await supabase.auth.updateUser({
+    data: {
+      full_name: fullName,
+      avatar_url: avatarUrl
+    }
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
 }
 
 
@@ -308,5 +331,19 @@ export async function deleteSupabaseProject(id: string): Promise<void> {
 
   if (error) {
     throw new Error(`Failed to delete project: ${error.message}`);
+  }
+}
+
+/**
+ * Wipe all project records from the database table.
+ */
+export async function deleteAllSupabaseProjects(): Promise<void> {
+  const { error } = await supabase
+    .from('reka_projects')
+    .delete()
+    .neq('id', '');
+
+  if (error) {
+    throw new Error(`Failed to clear projects: ${error.message}`);
   }
 }

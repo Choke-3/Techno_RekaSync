@@ -34,17 +34,22 @@ export default function Landing({ onNavigate, onSetDemoProject }: LandingProps) 
               Get Started Free
             </button>
             <button 
-              onClick={onSetDemoProject}
+              onClick={() => {
+                const element = document.getElementById('how-it-works');
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
               className="w-full sm:w-auto border border-outline-variant text-on-surface px-8 py-3.5 rounded-xl font-bold text-sm hover:bg-surface-container-high transition-colors active:scale-95 cursor-pointer"
             >
-              See How It Works (Demo)
+              How it works
             </button>
           </div>
         </div>
       </section>
 
       {/* How It Works Section */}
-      <section className="py-20 bg-surface-container-lowest border-y border-outline-variant/40">
+      <section id="how-it-works" className="py-20 bg-surface-container-lowest border-y border-outline-variant/40">
         <div className="max-w-7xl mx-auto px-6">
           <div className="mb-14 text-center max-w-xl mx-auto space-y-2">
             <h2 className="text-2xl md:text-3xl font-bold font-headline text-on-surface">How it works</h2>

@@ -26,6 +26,38 @@ export default function SwipeClient({
   const [isSwiping, setIsSwiping] = useState(false);
   const swipeStart = useRef({ x: 0, y: 0 });
 
+  const sessionLoggedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (project.assets.length > 0 && session.currentIndex === project.assets.length) {
+      const sessionKey = `${project.id}-${session.loves.join(',')}-${session.skips.join(',')}`;
+      if (sessionLoggedRef.current !== sessionKey) {
+        sessionLoggedRef.current = sessionKey;
+
+        const storageKey = `reka_sessions_${project.id}`;
+        let logs: any[] = [];
+        try {
+          const raw = localStorage.getItem(storageKey);
+          if (raw) logs = JSON.parse(raw);
+        } catch (e) {
+          console.error(e);
+        }
+
+        const newLog = {
+          id: `session-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          lovesCount: session.loves.length,
+          skipsCount: session.skips.length,
+          lovesList: session.loves.map(id => project.assets.find(a => a.id === id)?.title || 'Style').filter(Boolean),
+          skipsList: session.skips.map(id => project.assets.find(a => a.id === id)?.title || 'Style').filter(Boolean)
+        };
+
+        logs.unshift(newLog);
+        localStorage.setItem(storageKey, JSON.stringify(logs.slice(0, 20)));
+      }
+    }
+  }, [session.currentIndex, project.id, project.assets, session.loves, session.skips]);
+
   const currentAsset: StyleAsset | undefined = project.assets[session.currentIndex];
 
   const handleSwipeAction = (direction: 'love' | 'skip') => {
@@ -151,16 +183,7 @@ export default function SwipeClient({
       <div className="w-full max-w-[480px] space-y-8 z-10">
         
         {/* Navigation top bar */}
-        <div className="flex items-center justify-between">
-          <button 
-            type="button"
-            onClick={onBackToProject}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-outline-variant hover:border-on-surface bg-surface-container/60 hover:bg-surface-container font-semibold text-xs transition-colors cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Finish Review</span>
-          </button>
-          
+        <div className="flex items-center justify-center">
           <span className="text-[10px] font-black tracking-widest text-on-surface-variant uppercase bg-surface-container px-3 py-1 rounded-full border border-outline-variant/60">
             {project.title}
           </span>
@@ -286,13 +309,6 @@ export default function SwipeClient({
 
             {/* CTA action loops */}
             <div className="space-y-3 pt-2">
-              <button
-                onClick={onBackToProject}
-                className="w-full bg-primary text-on-primary font-bold text-xs py-3.5 rounded-xl transition-all hover:translate-y-[-1px] active:scale-95 shadow-lg shadow-primary/20 hover:brightness-110 cursor-pointer"
-              >
-                Return to Dashboard
-              </button>
-
               <button
                 onClick={handleResetSession}
                 className="w-full flex items-center justify-center gap-2 border border-outline-variant py-3 rounded-xl hover:bg-surface-container-high text-xs font-bold transition-all active:scale-95 cursor-pointer"

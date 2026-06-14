@@ -1,17 +1,21 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Plus, Image as ImageIcon, Sparkles, Upload, Trash2 } from 'lucide-react';
 import { Project, StyleAsset } from '../types';
 
 interface NewProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (project: Project) => void;
+  onCreate?: (project: Project) => void;
+  projectToEdit?: Project;
+  onUpdate?: (project: Project) => void;
 }
 
 export default function NewProjectModal({
   isOpen,
   onClose,
-  onCreate
+  onCreate,
+  projectToEdit,
+  onUpdate
 }: NewProjectModalProps) {
   const [title, setTitle] = useState('');
   const [clientName, setClientName] = useState('');
@@ -21,6 +25,32 @@ export default function NewProjectModal({
   const [uploadedImages, setUploadedImages] = useState<{ id: string; name: string; url: string }[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (projectToEdit) {
+        setTitle(projectToEdit.title || '');
+        setClientName(projectToEdit.clientName || '');
+        setClientEmail(projectToEdit.clientEmail || '');
+        setDescription(projectToEdit.description || '');
+        setCategoryName(projectToEdit.assets?.[0]?.category || 'Minimalist');
+        
+        const existingImages = (projectToEdit.assets || []).map(asset => ({
+          id: asset.id,
+          name: asset.title,
+          url: asset.imageUrl
+        }));
+        setUploadedImages(existingImages);
+      } else {
+        setTitle('');
+        setClientName('');
+        setClientEmail('');
+        setDescription('');
+        setCategoryName('Minimalist');
+        setUploadedImages([]);
+      }
+    }
+  }, [isOpen, projectToEdit]);
 
   if (!isOpen) return null;
 
@@ -88,8 +118,17 @@ export default function NewProjectModal({
 
     // Use uploaded images to populate the project's StyleAssets
     const newAssets: StyleAsset[] = uploadedImages.map((img, index) => {
+      // If it exists in projectToEdit, preserve its analytics
+      const existingAsset = projectToEdit?.assets?.find(a => a.id === img.id);
+      if (existingAsset) {
+        return {
+          ...existingAsset,
+          title: img.name,
+          category: categoryName || 'Concepts'
+        };
+      }
       return {
-        id: `custom-asset-${Date.now()}-${index}`,
+        id: img.id.startsWith('upload-') || img.id.startsWith('custom-asset-') ? img.id : `custom-asset-${Date.now()}-${index}`,
         title: img.name || `Style Layout ${index + 1}`,
         category: categoryName || 'Concepts',
         imageUrl: img.url,
@@ -99,19 +138,31 @@ export default function NewProjectModal({
       };
     });
 
-    const newProject: Project = {
-      id: `project-${Date.now()}`,
-      title,
-      clientName,
-      clientEmail: clientEmail || 'client@example.com',
-      description: description || 'No description supplied.',
-      status: 'Active',
-      createdDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-      team: ['AM', 'JS'],
-      assets: newAssets
-    };
-
-    onCreate(newProject);
+    if (projectToEdit && onUpdate) {
+      const updatedProject: Project = {
+        ...projectToEdit,
+        title,
+        clientName,
+        clientEmail: clientEmail || 'client@example.com',
+        description: description || 'No description supplied.',
+        assets: newAssets
+      };
+      onUpdate(updatedProject);
+    } else if (onCreate) {
+      const newProject: Project = {
+        id: `project-${Date.now()}`,
+        title,
+        clientName,
+        clientEmail: clientEmail || 'client@example.com',
+        description: description || 'No description supplied.',
+        status: 'Active',
+        createdDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        team: [],
+        assets: newAssets
+      };
+      onCreate(newProject);
+    }
+    
     onClose();
 
     // Reset clean states
@@ -137,8 +188,10 @@ export default function NewProjectModal({
         {/* Header */}
         <div className="px-6 py-4.5 border-b border-outline-variant flex items-center justify-between sticky top-0 bg-surface-container z-10">
           <div>
-            <h2 className="text-lg md:text-xl font-bold text-on-surface">Create New Project</h2>
-            <p className="text-xs text-on-surface-variant font-medium mt-1">Establish a new collaborative workspace.</p>
+            <h2 className="text-lg md:text-xl font-bold text-on-surface">{projectToEdit ? 'Edit Project Settings' : 'Create New Project'}</h2>
+            <p className="text-xs text-on-surface-variant font-medium mt-1">
+              {projectToEdit ? 'Modify collaborative workspace and visual assets.' : 'Establish a new collaborative workspace.'}
+            </p>
           </div>
           <button 
             type="button"
@@ -327,7 +380,7 @@ export default function NewProjectModal({
                 (!title || !clientName) ? 'opacity-50 cursor-not-allowed' : 'hover:translate-y-[-1px] active:scale-95 cursor-pointer'
               }`}
             >
-              Create Project
+              {projectToEdit ? 'Save Changes' : 'Create Project'}
             </button>
           </div>
         </form>

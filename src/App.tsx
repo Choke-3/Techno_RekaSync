@@ -21,6 +21,7 @@ import {
   updateSupabaseProject, 
   updateSupabaseProjectStatus, 
   deleteSupabaseProject,
+  deleteAllSupabaseProjects,
   logoutUser,
   supabase
 } from './lib/supabase';
@@ -36,7 +37,7 @@ interface ToastState {
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>('landing');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
+  const [projects, setProjects] = useState<Project[]>([]);
   
   // Supabase states
   const [supabaseStatus, setSupabaseStatus] = useState<'testing' | 'connected' | 'error'>('testing');
@@ -101,7 +102,7 @@ export default function App() {
 
   // 3. Page guarding effect: redirect unauthenticated users to signin when touching private views
   useEffect(() => {
-    const PUBLIC_VIEWS: ViewType[] = ['landing', 'privacy', 'signin', 'signup'];
+    const PUBLIC_VIEWS: ViewType[] = ['landing', 'privacy', 'signin', 'signup', 'swipe'];
     if (!user && !PUBLIC_VIEWS.includes(currentView)) {
       triggerToast('Authentication is required first. Please sign in or create an account to access the workspace features.', 'Access Restricted', 'warning');
       setCurrentView('signin');
@@ -112,7 +113,7 @@ export default function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
-  // Automated Supabase Database Hydration & Seeding Flow
+  // Automated Supabase Database Hydration Control
   const initSupabase = async () => {
     try {
       setSupabaseStatus('testing');
@@ -124,14 +125,9 @@ export default function App() {
           setProjects(supabaseProjects);
           triggerToast('Successfully fetched live project ledgers from your cloud Supabase database.', 'Supabase Online', 'success');
         } else {
-          // Seed the Supabase database with our default starting records! 
-          // This guarantees the user has a ready-coded starting playground without manual copy pastes!
-          for (const proj of INITIAL_PROJECTS) {
-            await insertSupabaseProject(proj);
-          }
-          const seededProjects = await getSupabaseProjects();
-          setProjects(seededProjects);
-          triggerToast('Supabase was blank. Auto-seeded starting project data into Cloud tables!', 'Seeding Complete', 'success');
+          // Keep workspace completely empty! The user decided to start fresh with no dummy data.
+          setProjects([]);
+          triggerToast('Successfully connected to Supabase workspace. Your ledger is clean and ready!', 'Supabase Online', 'success');
         }
       } else {
         setSupabaseStatus('error');
@@ -144,9 +140,71 @@ export default function App() {
     }
   };
 
+  /**
+   * Manually populate the active database with pre-packaged interactive demo metrics.
+   */
+  const handleSeedSampleProjects = async () => {
+    try {
+      setSupabaseStatus('testing');
+      triggerToast('Populating your database with starter projects...', 'Seeding Started', 'info');
+      
+      // Clear current list to prevent duplicate primary keys in the session 
+      if (supabaseStatus === 'connected') {
+        await deleteAllSupabaseProjects();
+      }
+
+      // Insert all
+      for (const proj of INITIAL_PROJECTS) {
+        await insertSupabaseProject(proj);
+      }
+      
+      const seededProjects = await getSupabaseProjects();
+      setProjects(seededProjects);
+      setSupabaseStatus('connected');
+      triggerToast('Sandbox workspace successfully populated with modern style boards!', 'Seeding Complete', 'success');
+    } catch (err: any) {
+      console.error("Manual seed error:", err);
+      setSupabaseStatus('error');
+      triggerToast(err.message || 'Error populating starting records.', 'Seeding Failed', 'warning');
+    }
+  };
+
+  /**
+   * Wipe all active tables and clear runtime state completely to start fresh!
+   */
+  const handleWipeAllProjects = async () => {
+    try {
+      setSupabaseStatus('testing');
+      if (supabaseStatus === 'connected') {
+        await deleteAllSupabaseProjects();
+      }
+      setProjects([]);
+      setSupabaseStatus('connected');
+      triggerToast('All project metrics and tables have been purged. You have a completely blank workbench!', 'Workspace Cleared', 'success');
+    } catch (err: any) {
+      console.error("Wipe error:", err);
+      setSupabaseStatus('error');
+      triggerToast(err.message || 'Could not empty the ledger tables.', 'Wipe Failed', 'warning');
+    }
+  };
+
   useEffect(() => {
     initSupabase();
   }, []);
+  
+  // Parse deep sharing client link query parameters
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const projId = params.get('project');
+    const view = params.get('view');
+    if (view === 'swipe' && projId) {
+      const found = projects.find(p => p.id === projId);
+      if (found) {
+        setSelectedProjectId(projId);
+        setCurrentView('swipe');
+      }
+    }
+  }, [projects]);
 
 
   // Seed default notifications inside system index
@@ -387,7 +445,11 @@ export default function App() {
         {currentView === 'swipe' && activeSelectedProject && (
           <SwipeClient 
             onBackToProject={() => {
-              setCurrentView('project-detail');
+              if (user) {
+                setCurrentView('project-detail');
+              } else {
+                setCurrentView('landing');
+              }
             }} 
             project={activeSelectedProject} 
             onUpdateProject={handleUpdateProject}
@@ -415,6 +477,8 @@ export default function App() {
         status={supabaseStatus}
         errorMessage={supabaseErrorMsg}
         onRetry={initSupabase}
+        onSeedSample={handleSeedSampleProjects}
+        onWipeDatabase={handleWipeAllProjects}
       />
 
       {/* Floating Supabase Sync Status Indicator Badge */}

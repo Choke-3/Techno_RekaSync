@@ -8,6 +8,8 @@ interface SupabaseSyncModalProps {
   status: 'testing' | 'connected' | 'error';
   errorMessage: string | null;
   onRetry?: () => void;
+  onSeedSample?: () => void;
+  onWipeDatabase?: () => void;
 }
 
 export default function SupabaseSyncModal({
@@ -15,7 +17,9 @@ export default function SupabaseSyncModal({
   onClose,
   status,
   errorMessage,
-  onRetry
+  onRetry,
+  onSeedSample,
+  onWipeDatabase
 }: SupabaseSyncModalProps) {
   const [copied, setCopied] = useState(false);
 
@@ -134,6 +138,40 @@ export default function SupabaseSyncModal({
               </div>
             </div>
           </div>
+
+          {/* Data State Control Panel */}
+          {status === 'connected' && (
+            <div className="space-y-2 animate-fade-in">
+              <h3 className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5" /> Workspace Reset & Control Panel
+              </h3>
+              <div className="p-4 bg-surface-container-low border border-outline-variant/40 rounded-xl space-y-4">
+                <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed">
+                  Start with a clean workbench! Trigger a hard reset sequence to empty all live database rows or re-seed starter templates safely.
+                </p>
+                <div className="flex flex-wrap gap-2.5">
+                  {onWipeDatabase && (
+                    <button
+                      type="button"
+                      onClick={onWipeDatabase}
+                      className="px-4 py-2.5 bg-error hover:bg-error/90 text-white text-[11px] font-black tracking-wider uppercase rounded-xl transition-all active:scale-[0.98] shadow-sm disabled:opacity-50 cursor-pointer"
+                    >
+                      Wipe All Projects & Start Fresh
+                    </button>
+                  )}
+                  {onSeedSample && (
+                    <button
+                      type="button"
+                      onClick={onSeedSample}
+                      className="px-4 py-2.5 bg-secondary/10 hover:bg-secondary/25 text-secondary border border-secondary/20 text-[11px] font-black tracking-wider uppercase rounded-xl transition-all active:scale-[0.98] shadow-sm disabled:opacity-50 cursor-pointer"
+                    >
+                      Seed Demo Style Boards
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Step-by-Step Instructions */}
           <div className="space-y-3 pt-2">
