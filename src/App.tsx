@@ -13,7 +13,17 @@ import SwipeClient from './views/SwipeClient';
 
 import { INITIAL_PROJECTS } from './data';
 import { Project, ViewType } from './types';
-import { X, Sparkles, BellRing, Info, AlertCircle } from 'lucide-react';
+import { X, Sparkles, BellRing, Info, AlertCircle, Database } from 'lucide-react';
+import { 
+  testConnection, 
+  getSupabaseProjects, 
+  insertSupabaseProject, 
+  updateSupabaseProject, 
+  updateSupabaseProjectStatus, 
+  deleteSupabaseProject 
+} from './lib/supabase';
+import SupabaseSyncModal from './components/SupabaseSyncModal';
+
 
 interface ToastState {
   message: string;
@@ -26,6 +36,11 @@ export default function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
   
+  // Supabase states
+  const [supabaseStatus, setSupabaseStatus] = useState<'testing' | 'connected' | 'error'>('testing');
+  const [supabaseErrorMsg, setSupabaseErrorMsg] = useState<string | null>(null);
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+  
   // Set default logged in state for sandbox visual richness, but they can sign out
   const [user, setUser] = useState<{ name: string; email: string; avatarUrl: string } | null>({
     name: 'Alexander Morgan',
@@ -36,6 +51,43 @@ export default function App() {
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+
+  // Automated Supabase Database Hydration & Seeding Flow
+  const handleVerifySupabaseConnection = async () => {
+    try {
+      setSupabaseStatus('testing');
+      const isConnected = await testConnection();
+      if (isConnected) {
+        setSupabaseStatus('connected');
+        const supabaseProjects = await getSupabaseProjects();
+        if (supabaseProjects && supabaseProjects.length > 0) {
+          setProjects(supabaseProjects);
+          triggerToast('Successfully fetched live project ledgers from your cloud Supabase database.', 'Supabase Online', 'success');
+        } else {
+          // Seed the Supabase database with our default starting records! 
+          // This guarantees the user has a ready-coded starting playground without manual copy pastes!
+          for (const proj of INITIAL_PROJECTS) {
+            await insertSupabaseProject(proj);
+          }
+          const seededProjects = await getSupabaseProjects();
+          setProjects(seededProjects);
+          triggerToast('Supabase was blank. Auto-seeded starting project data into Cloud tables!', 'Seeding Complete', 'success');
+        }
+      } else {
+        setSupabaseStatus('error');
+        setSupabaseErrorMsg('Tables might not be initialized yet.');
+      }
+    } catch (err: any) {
+      console.warn("Supabase connection check failed:", err.message);
+      setSupabaseStatus('error');
+      setSupabaseErrorMsg(err.message || 'Connecting with Supabase REST API...');
+    }
+  };
+
+  useEffect(() => {
+    handleVerifySupabaseConnection();
+  }, []);
+
 
   // Seed default notifications inside system index
   const [notifications, setNotifications] = useState([
@@ -89,30 +141,66 @@ export default function App() {
     }
   };
 
-  // Project updating wrappers
-  const handleCreateProject = (newProject: Project) => {
-    setProjects([newProject, ...projects]);
+  // Project updating wrappers with Supabase sync
+  const handleCreateProject = async (newProject: Project) => {
+    setProjects(prev => [newProject, ...prev]);
     triggerToast(`Constructed and synchronized '${newProject.title}' project ledger.`, 'Workspace Generated');
-  };
 
-  const handleDeleteProject = (id: string) => {
-    const title = projects.find(p => p.id === id)?.title;
-    setProjects(projects.filter(p => p.id !== id));
-    triggerToast(`Safely deleted project '${title || id}' from database.`, 'Project Purged', 'warning');
-  };
-
-  const handleUpdateProjectStatus = (id: string, status: 'Active' | 'Completed' | 'Archived') => {
-    setProjects(projects.map(p => {
-      if (p.id === id) {
-        return { ...p, status };
+    if (supabaseStatus === 'connected') {
+      try {
+        await insertSupabaseProject(newProject);
+        triggerToast(`Project '${newProject.title}' synced with Supabase!`, 'Supabase Synced');
+      } catch (err: any) {
+        console.error("Supabase sync error:", err);
+        triggerToast(`Local project created, but Supabase insert failed: ${err.message}`, 'Supabase Sync Error', 'warning');
       }
-      return p;
-    }));
+    }
   };
 
-  const handleUpdateProject = (updatedProject: Project) => {
-    setProjects(projects.map(p => p.id === updatedProject.id ? updatedProject : p));
+  const handleDeleteProject = async (id: string) => {
+    const title = projects.find(p => p.id === id)?.title;
+    setProjects(prev => prev.filter(p => p.id !== id));
+    triggerToast(`Safely deleted project '${title || id}' from database.`, 'Project Purged', 'warning');
+
+    if (supabaseStatus === 'connected') {
+      try {
+        await deleteSupabaseProject(id);
+        triggerToast(`Deleted project from Supabase.`, 'Supabase Synced');
+      } catch (err: any) {
+        console.error("Supabase sync error:", err);
+        triggerToast(`Failed to delete from Supabase: ${err.message}`, 'Supabase Sync Error', 'warning');
+      }
+    }
   };
+
+  const handleUpdateProjectStatus = async (id: string, status: 'Active' | 'Completed' | 'Archived') => {
+    setProjects(prev => prev.map(p => p.id === id ? { ...p, status } : p));
+
+    if (supabaseStatus === 'connected') {
+      try {
+        await updateSupabaseProjectStatus(id, status);
+        triggerToast(`Status changed to ${status} in Supabase.`, 'Supabase Synced');
+      } catch (err: any) {
+        console.error("Supabase sync error:", err);
+        triggerToast(`Failed to sync status in Supabase: ${err.message}`, 'Supabase Sync Error', 'warning');
+      }
+    }
+  };
+
+  const handleUpdateProject = async (updatedProject: Project) => {
+    setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
+
+    if (supabaseStatus === 'connected') {
+      try {
+        await updateSupabaseProject(updatedProject);
+        triggerToast(`Preferences synced with Supabase!`, 'Supabase Synced');
+      } catch (err: any) {
+        console.error("Supabase sync error:", err);
+        triggerToast(`Failed to sync updates to Supabase: ${err.message}`, 'Supabase Sync Error', 'warning');
+      }
+    }
+  };
+
 
   // Find active selected project data
   const activeSelectedProject = projects.find(p => p.id === selectedProjectId);
@@ -250,6 +338,33 @@ export default function App() {
         onClose={() => setIsNewProjectModalOpen(false)} 
         onCreate={handleCreateProject}
       />
+
+      {/* Supabase SQL and setup instructions Modal */}
+      <SupabaseSyncModal 
+        isOpen={isSqlModalOpen}
+        onClose={() => setIsSqlModalOpen(false)}
+        status={supabaseStatus}
+        errorMessage={supabaseErrorMsg}
+        onRetry={handleVerifySupabaseConnection}
+      />
+
+      {/* Floating Supabase Sync Status Indicator Badge */}
+      <div className="fixed bottom-6 left-6 z-[95]">
+        <button
+          onClick={() => setIsSqlModalOpen(true)}
+          className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-black tracking-wide shadow-lg cursor-pointer transition-all hover:scale-105 active:scale-95 ${
+            supabaseStatus === 'connected'
+              ? 'bg-tertiary/15 border-tertiary/30 text-tertiary backdrop-blur-md'
+              : supabaseStatus === 'testing'
+              ? 'bg-surface-container-high border-outline-variant/60 text-on-surface-variant backdrop-blur-md'
+              : 'bg-error/15 border-error/30 text-error backdrop-blur-md'
+          }`}
+          title="Click to view Supabase Connection and Table script Setup"
+        >
+          <Database className={`w-3.5 h-3.5 ${supabaseStatus === 'connected' ? 'animate-bounce' : ''}`} />
+          <span>Supabase: {supabaseStatus === 'connected' ? 'Synced' : supabaseStatus === 'testing' ? 'Testing' : 'Setup Required'}</span>
+        </button>
+      </div>
 
       {/* Aesthetic Global Notification Toast */}
       {toast && (
