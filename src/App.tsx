@@ -20,7 +20,9 @@ import {
   insertSupabaseProject, 
   updateSupabaseProject, 
   updateSupabaseProjectStatus, 
-  deleteSupabaseProject 
+  deleteSupabaseProject,
+  logoutUser,
+  supabase
 } from './lib/supabase';
 import SupabaseSyncModal from './components/SupabaseSyncModal';
 
@@ -41,19 +43,77 @@ export default function App() {
   const [supabaseErrorMsg, setSupabaseErrorMsg] = useState<string | null>(null);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   
-  // Set default logged in state for sandbox visual richness, but they can sign out
-  const [user, setUser] = useState<{ name: string; email: string; avatarUrl: string } | null>({
-    name: 'Alexander Morgan',
-    email: 'alexander.morgan@rekasync.io',
-    avatarUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDR3ShdSe3XCmjYV0bcDQuSudSlNvQL-Y9u5NfaZOg2RdciLLS99iLZrNmSHaoEH9iPC6oz48jpOyKbCSIKJGV6mS8bLFuZ5exJIcHaNnP-UPvkUTCVkZD1NBIhLQZQPSCcGdcNu3G78FRmirs8Pj6m1xU-r8RC3t_4G-XC6JPOkjvcwfyAcKr__sSwlOS3CpMEVWua0KpOZK05gGG8C3yjkAUiY9ahs9jrIBl6mz90ObxFeeajXUaLVuTL89gtpmxmBlWyBAeIz_w'
-  });
+  // Set default logged in state to null to force authentication
+  const [user, setUser] = useState<{ name: string; email: string; avatarUrl: string } | null>(null);
+
+  useEffect(() => {
+    // 1. Initial active session check on mount
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session && session.user) {
+          const userMeta = session.user.user_metadata || {};
+          const fallbackName = session.user.email?.split('@')[0] || 'User';
+          const friendlyName = userMeta.full_name || (fallbackName.charAt(0).toUpperCase() + fallbackName.slice(1));
+          
+          setUser({
+            name: friendlyName,
+            email: session.user.email || '',
+            avatarUrl: userMeta.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuDR3ShdSe3XCmjYV0bcDQuSudSlNvQL-Y9u5NfaZOg2RdciLLS99iLZrNmSHaoEH9iPC6oz48jpOyKbCSIKJGV6mS8bLFuZ5exJIcHaNnP-UPvkUTCVkZD1NBIhLQZQPSCcGdcNu3G78FRmirs8Pj6m1xU-r8RC3t_4G-XC6JPOkjvcwfyAcKr__sSwlOS3CpMEVWua0KpOZK05gGG8C3yjkAUiY9ahs9jrIBl6mz90ObxFeeajXUaLVuTL89gtpmxmBlWyBAeIz_w'
+          });
+
+          // Redirect to dashboard on refresh if they are on a guest-only view
+          setCurrentView(prev => {
+            if (prev === 'signin' || prev === 'signup') {
+              return 'dashboard';
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        console.warn('Session restoration failed:', err);
+      }
+    };
+
+    checkSession();
+
+    // 2. Continuous real-time subscription for Auth State Events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session && session.user) {
+        const userMeta = session.user.user_metadata || {};
+        const fallbackName = session.user.email?.split('@')[0] || 'User';
+        const friendlyName = userMeta.full_name || (fallbackName.charAt(0).toUpperCase() + fallbackName.slice(1));
+        
+        setUser({
+          name: friendlyName,
+          email: session.user.email || '',
+          avatarUrl: userMeta.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuDR3ShdSe3XCmjYV0bcDQuSudSlNvQL-Y9u5NfaZOg2RdciLLS99iLZrNmSHaoEH9iPC6oz48jpOyKbCSIKJGV6mS8bLFuZ5exJIcHaNnP-UPvkUTCVkZD1NBIhLQZQPSCcGdcNu3G78FRmirs8Pj6m1xU-r8RC3t_4G-XC6JPOkjvcwfyAcKr__sSwlOS3CpMEVWua0KpOZK05gGG8C3yjkAUiY9ahs9jrIBl6mz90ObxFeeajXUaLVuTL89gtpmxmBlWyBAeIz_w'
+        });
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // 3. Page guarding effect: redirect unauthenticated users to signin when touching private views
+  useEffect(() => {
+    const PUBLIC_VIEWS: ViewType[] = ['landing', 'privacy', 'signin', 'signup'];
+    if (!user && !PUBLIC_VIEWS.includes(currentView)) {
+      triggerToast('Authentication is required first. Please sign in or create an account to access the workspace features.', 'Access Restricted', 'warning');
+      setCurrentView('signin');
+    }
+  }, [currentView, user]);
 
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
   // Automated Supabase Database Hydration & Seeding Flow
-  const handleVerifySupabaseConnection = async () => {
+  const initSupabase = async () => {
     try {
       setSupabaseStatus('testing');
       const isConnected = await testConnection();
@@ -75,7 +135,7 @@ export default function App() {
         }
       } else {
         setSupabaseStatus('error');
-        setSupabaseErrorMsg('Tables might not be initialized yet.');
+        setSupabaseErrorMsg('Tables might not be initialized yet. Please make sure the SQL code is run.');
       }
     } catch (err: any) {
       console.warn("Supabase connection check failed:", err.message);
@@ -85,7 +145,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    handleVerifySupabaseConnection();
+    initSupabase();
   }, []);
 
 
@@ -218,9 +278,18 @@ export default function App() {
             setNotificationsOpen(false);
           }}
           user={user}
-          onSignOut={() => {
-            setUser(null);
-            triggerToast('Signed out of RekaSync workstation.', 'Workspace Cleared');
+          onSignOut={async () => {
+            try {
+              await logoutUser();
+              setUser(null);
+              triggerToast('Signed out of RekaSync workstation.', 'Workspace Cleared');
+              setCurrentView('landing');
+            } catch (err: any) {
+              console.error('Logout error:', err);
+              setUser(null);
+              triggerToast('Local session cleared.', 'Signed Out');
+              setCurrentView('landing');
+            }
           }}
           unreadCount={unreadCount}
           onToggleNotifications={handleToggleNotifications}
@@ -345,7 +414,7 @@ export default function App() {
         onClose={() => setIsSqlModalOpen(false)}
         status={supabaseStatus}
         errorMessage={supabaseErrorMsg}
-        onRetry={handleVerifySupabaseConnection}
+        onRetry={initSupabase}
       />
 
       {/* Floating Supabase Sync Status Indicator Badge */}

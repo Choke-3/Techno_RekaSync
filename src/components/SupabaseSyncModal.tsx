@@ -100,23 +100,23 @@ export default function SupabaseSyncModal({
                 </div>
               </div>
 
-              {status === 'error' && (
-                <div className="sm:self-center flex flex-col items-start sm:items-end gap-2 shrink-0">
-                  <span className="text-[10px] font-black tracking-wider uppercase bg-error/15 text-error px-2.5 py-1 rounded-full border border-error/20">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:self-center">
+                {status === 'error' && (
+                  <span className="text-[10px] font-black tracking-wider uppercase bg-error/15 text-error px-2.5 py-1 rounded-full border border-error/20 text-center">
                     Tables Missing
                   </span>
-                  {onRetry && (
-                    <button
-                      type="button"
-                      onClick={onRetry}
-                      className="px-3 py-1.5 bg-primary text-on-primary rounded-md text-[10px] font-bold hover:translate-y-[-1px] transition-transform active:scale-95 cursor-pointer flex items-center gap-1"
-                    >
-                      <Database className="w-3 h-3" />
-                      <span>Verify Setup Now</span>
-                    </button>
-                  )}
-                </div>
-              )}
+                )}
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    disabled={status === 'testing'}
+                    className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-on-primary text-[10px] font-black tracking-wide uppercase rounded-lg transition-all active:scale-95 shadow-sm space-x-1 cursor-pointer"
+                  >
+                    {status === 'testing' ? 'Verifying...' : 'Verify & Connect'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

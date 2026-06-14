@@ -1,46 +1,60 @@
 import React, { useState } from 'react';
 import { ViewType } from '../types';
+import { loginUser } from '../lib/supabase';
 
 interface SignInProps {
   onNavigate: (view: ViewType) => void;
   onSignInSuccess: (user: { name: string; email: string; avatarUrl: string }) => void;
-  onNotify: (msg: string, title?: string) => void;
+  onNotify: (msg: string, title?: string, type?: 'success' | 'info' | 'warning') => void;
 }
 
 export default function SignIn({ onNavigate, onSignInSuccess, onNotify }: SignInProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) {
-      onNotify('Please supply your email address.', 'Input required');
+    if (!email || !password) {
+      onNotify('Please supply your email address and password.', 'Input required', 'warning');
       return;
     }
     
-    // Perform standard signin
-    const name = email.split('@')[0];
-    const friendlyName = name.charAt(0).toUpperCase() + name.slice(1);
-    
-    onSignInSuccess({
-      name: friendlyName || 'Alexander Morgan',
-      email: email,
-      avatarUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDR3ShdSe3XCmjYV0bcDQuSudSlNvQL-Y9u5NfaZOg2RdciLLS99iLZrNmSHaoEH9iPC6oz48jpOyKbCSIKJGV6mS8bLFuZ5exJIcHaNnP-UPvkUTCVkZD1NBIhLQZQPSCcGdcNu3G78FRmirs8Pj6m1xU-r8RC3t_4G-XC6JPOkjvcwfyAcKr__sSwlOS3CpMEVWua0KpOZK05gGG8C3yjkAUiY9ahs9jrIBl6mz90ObxFeeajXUaLVuTL89gtpmxmBlWyBAeIz_w'
-    });
-    
-    onNotify(`Welcome back, ${friendlyName}! You are signed in to your workspace.`, 'Sign In Successful');
-    onNavigate('dashboard');
+    setIsLoading(true);
+    try {
+      const data = await loginUser(email, password);
+      
+      const userMeta = data.user?.user_metadata || {};
+      const fallbackName = email.split('@')[0];
+      const friendlyName = userMeta.full_name || (fallbackName.charAt(0).toUpperCase() + fallbackName.slice(1));
+      
+      onSignInSuccess({
+        name: friendlyName,
+        email: data.user?.email || email,
+        avatarUrl: userMeta.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuDR3ShdSe3XCmjYV0bcDQuSudSlNvQL-Y9u5NfaZOg2RdciLLS99iLZrNmSHaoEH9iPC6oz48jpOyKbCSIKJGV6mS8bLFuZ5exJIcHaNnP-UPvkUTCVkZD1NBIhLQZQPSCcGdcNu3G78FRmirs8Pj6m1xU-r8RC3t_4G-XC6JPOkjvcwfyAcKr__sSwlOS3CpMEVWua0KpOZK05gGG8C3yjkAUiY9ahs9jrIBl6mz90ObxFeeajXUaLVuTL89gtpmxmBlWyBAeIz_w'
+      });
+      
+      onNotify(`Welcome back, ${friendlyName}! You are signed in to your workspace.`, 'Sign In Successful', 'success');
+      onNavigate('dashboard');
+    } catch (err: any) {
+      console.error('Supabase Sign In Error:', err);
+      onNotify(err.message || 'Verification of credentials failed. Double check your email and password.', 'Sign In Failed', 'warning');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleGoogleSignIn = () => {
+    // Standard bypass for local workspace tests
     onSignInSuccess({
       name: 'Alexander Morgan',
       email: 'alexander.morgan@rekasync.io',
       avatarUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDR3ShdSe3XCmjYV0bcDQuSudSlNvQL-Y9u5NfaZOg2RdciLLS99iLZrNmSHaoEH9iPC6oz48jpOyKbCSIKJGV6mS8bLFuZ5exJIcHaNnP-UPvkUTCVkZD1NBIhLQZQPSCcGdcNu3G78FRmirs8Pj6m1xU-r8RC3t_4G-XC6JPOkjvcwfyAcKr__sSwlOS3CpMEVWua0KpOZK05gGG8C3yjkAUiY9ahs9jrIBl6mz90ObxFeeajXUaLVuTL89gtpmxmBlWyBAeIz_w'
     });
-    onNotify('Signed in with Google standard single sign-on.', 'Google Auth Complete');
+    onNotify('Signed in using standard sandbox profile credentials.', 'Auth Profile Loaded', 'info');
     onNavigate('dashboard');
   };
+
 
   return (
     <main className="relative min-h-screen flex flex-col justify-center items-center px-6 pt-20 pb-12 text-on-surface">
@@ -95,9 +109,20 @@ export default function SignIn({ onNavigate, onSignInSuccess, onNotify }: SignIn
 
           <button 
             type="submit"
-            className="w-full bg-primary text-on-primary font-bold text-xs py-3.5 rounded-xl hover:brightness-110 active:scale-[0.98] transition-all cursor-pointer shadow-md shadow-primary/10"
+            disabled={isLoading}
+            className="w-full bg-primary text-on-primary font-bold text-xs py-3.5 rounded-xl hover:brightness-110 active:scale-[0.98] transition-all cursor-pointer shadow-md shadow-primary/10 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            Sign In
+            {isLoading ? (
+              <>
+                <svg className="animate-spin h-4 w-4 text-on-primary" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <span>Verifying Credentials...</span>
+              </>
+            ) : (
+              <span>Sign In</span>
+            )}
           </button>
         </form>
 

@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { User, Mail, Lock, Sparkles } from 'lucide-react';
+import { User, Mail, Lock } from 'lucide-react';
 import { ViewType } from '../types';
+import { registerUser } from '../lib/supabase';
 
 interface SignUpProps {
   onNavigate: (view: ViewType) => void;
   onSignUpSuccess: (user: { name: string; email: string; avatarUrl: string }) => void;
-  onNotify: (msg: string, title?: string) => void;
+  onNotify: (msg: string, title?: string, type?: 'success' | 'info' | 'warning') => void;
 }
 
 export default function SignUp({ onNavigate, onSignUpSuccess, onNotify }: SignUpProps) {
@@ -13,26 +14,43 @@ export default function SignUp({ onNavigate, onSignUpSuccess, onNotify }: SignUp
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [agreed, setAgreed] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName || !email) {
-      onNotify('Please declare your Name and Email Address.', 'Form incomplete');
+    if (!fullName || !email || !password) {
+      onNotify('Please declare your Name, Email, and Password.', 'Form incomplete', 'warning');
       return;
     }
     if (!agreed) {
-      onNotify('You must accept the terms of service to create your creative workspace.', 'Agreement Needed');
+      onNotify('You must accept the terms of service to create your creative workspace.', 'Agreement Needed', 'warning');
       return;
     }
 
-    onSignUpSuccess({
-      name: fullName,
-      email: email,
-      avatarUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDR3ShdSe3XCmjYV0bcDQuSudSlNvQL-Y9u5NfaZOg2RdciLLS99iLZrNmSHaoEH9iPC6oz48jpOyKbCSIKJGV6mS8bLFuZ5exJIcHaNnP-UPvkUTCVkZD1NBIhLQZQPSCcGdcNu3G78FRmirs8Pj6m1xU-r8RC3t_4G-XC6JPOkjvcwfyAcKr__sSwlOS3CpMEVWua0KpOZK05gGG8C3yjkAUiY9ahs9jrIBl6mz90ObxFeeajXUaLVuTL89gtpmxmBlWyBAeIz_w'
-    });
-
-    onNotify(`Account created successfully! Welcome to RekaSync, ${fullName}.`, 'Workspace Provisioned');
-    onNavigate('dashboard');
+    setIsLoading(true);
+    try {
+      const data = await registerUser(email, password, fullName);
+      
+      if (data.session) {
+        // If auto-authenticated (e.g. Email confirmation disabled)
+        onSignUpSuccess({
+          name: fullName,
+          email: email,
+          avatarUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDR3ShdSe3XCmjYV0bcDQuSudSlNvQL-Y9u5NfaZOg2RdciLLS99iLZrNmSHaoEH9iPC6oz48jpOyKbCSIKJGV6mS8bLFuZ5exJIcHaNnP-UPvkUTCVkZD1NBIhLQZQPSCcGdcNu3G78FRmirs8Pj6m1xU-r8RC3t_4G-XC6JPOkjvcwfyAcKr__sSwlOS3CpMEVWua0KpOZK05gGG8C3yjkAUiY9ahs9jrIBl6mz90ObxFeeajXUaLVuTL89gtpmxmBlWyBAeIz_w'
+        });
+        onNotify(`Account created successfully! Welcome to RekaSync, ${fullName}.`, 'Workspace Provisioned', 'success');
+        onNavigate('dashboard');
+      } else {
+        // If email verification link is required by your Supabase project settings
+        onNotify(`Registration completed! Please check your email inbox at ${email} to activate your workspace before signing in.`, 'Verification Sent', 'info');
+        onNavigate('signin');
+      }
+    } catch (err: any) {
+      console.error('Supabase Sign Up Error:', err);
+      onNotify(err.message || 'Failed to create your credentials. Please try again.', 'Registration Failed', 'warning');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleGoogleSignUp = () => {
@@ -41,9 +59,10 @@ export default function SignUp({ onNavigate, onSignUpSuccess, onNotify }: SignUp
       email: 'alexander.morgan@rekasync.io',
       avatarUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDR3ShdSe3XCmjYV0bcDQuSudSlNvQL-Y9u5NfaZOg2RdciLLS99iLZrNmSHaoEH9iPC6oz48jpOyKbCSIKJGV6mS8bLFuZ5exJIcHaNnP-UPvkUTCVkZD1NBIhLQZQPSCcGdcNu3G78FRmirs8Pj6m1xU-r8RC3t_4G-XC6JPOkjvcwfyAcKr__sSwlOS3CpMEVWua0KpOZK05gGG8C3yjkAUiY9ahs9jrIBl6mz90ObxFeeajXUaLVuTL89gtpmxmBlWyBAeIz_w'
     });
-    onNotify('Workspace mapped to Google standard account credentials.', 'Google Sign Up Complete');
+    onNotify('Workspace mapped to Google standard account credentials.', 'Google Sign Up Complete', 'success');
     onNavigate('dashboard');
   };
+
 
   return (
     <main className="relative min-h-screen flex flex-col justify-center items-center px-6 pt-24 pb-12 text-on-surface">
@@ -129,9 +148,20 @@ export default function SignUp({ onNavigate, onSignUpSuccess, onNotify }: SignUp
             {/* Primary CTA */}
             <button 
               type="submit"
-              className="w-full bg-primary text-on-primary font-bold text-xs py-3.5 rounded-xl transition-all hover:translate-y-[-1px] active:scale-95 shadow-md shadow-primary/20 hover:brightness-110 cursor-pointer"
+              disabled={isLoading}
+              className="w-full bg-primary text-on-primary font-bold text-xs py-3.5 rounded-xl transition-all hover:translate-y-[-1px] active:scale-95 shadow-md shadow-primary/20 hover:brightness-110 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              Create Account
+              {isLoading ? (
+                <>
+                  <svg className="animate-spin h-4 w-4 text-on-primary" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <span>Provisioning Account...</span>
+                </>
+              ) : (
+                <span>Create Account</span>
+              )}
             </button>
 
             {/* Divider */}
